@@ -46,7 +46,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. All TurnRecord `signature_name` fields are non-`"StringSignature"` even for agents that use inline string signatures — the class+sorted-fields identity scheme is in effect
   4. Per-step `input_token_count` and `output_token_count` are non-zero and consistent with the actual request size; a cache-hit step is recorded with a distinct cache_hit flag rather than silently showing zero tokens
   5. Two concurrent sessions running under separate `TrajectoryTracker` instances (different `session_id`) do not bleed step counts or window entries into each other
-**Plans**: TBD
+**Plans**: 3 plans
+  - [ ] 02-01-PLAN.md — Wave 0: DummyLM test double + 7 RED test stubs (CAP-01..CAP-07)
+  - [ ] 02-02-PLAN.md — TrajectoryCallback core: overcount sentinel, signature identity, usage path, exception capture (CAP-03, CAP-04, CAP-05, CAP-06)
+  - [ ] 02-03-PLAN.md — TrajectoryTracker wiring: dspy.context registration, registry lifecycle, session isolation (CAP-01, CAP-02, CAP-07)
 
 ### Phase 3: Dynamic Scoring Engine
 **Goal**: After each ReAct step, the scoring engine analyzes the session window and correctly flags reasoning loops, tool-call flapping, and structural constraint demands — with every threshold exposed as config and a per-session escalation cap in place before any real model calls are made
@@ -91,7 +94,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Contracts | 4/4 | Complete    | 2026-06-18 |
-| 2. State Capture Engine | 0/TBD | Not started | - |
+| 2. State Capture Engine | 0/3 | Planned | - |
 | 3. Dynamic Scoring Engine | 0/TBD | Not started | - |
 | 4. RouteLLM Execution Layer | 0/TBD | Not started | - |
 | 5. Integration & Validation | 0/TBD | Not started | - |
