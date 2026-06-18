@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. `RouterConfig` exposes window_size, default_threshold, loop_similarity_threshold, max_escalations_per_session, weak_model, and strong_model with validated pydantic defaults
   5. Project directory matches the documented structure (`agent_router/`, `tests/unit/`, `tests/integration/`, `tests/bench/`)
 **Plans**: 4 plans
-  - [ ] 01-01-PLAN.md — Package scaffold, pyproject.toml, dev-dep install, test scaffold (LIB-01)
+  - [x] 01-01-PLAN.md — Package scaffold, pyproject.toml, dev-dep install, test scaffold (LIB-01)
   - [ ] 01-02-PLAN.md — Data contracts: TurnRecord/CostRecord/SessionState, mypy --strict (LIB-01)
   - [ ] 01-03-PLAN.md — RouterConfig (pydantic-settings, env-driven model pair) (LIB-02)
   - [ ] 01-04-PLAN.md — Lazy public API + TrajectoryTracker/DynamicRouteLM stubs (LIB-01)
@@ -90,7 +90,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Contracts | 0/4 | Planned | - |
+| 1. Foundation & Contracts | 1/4 | In Progress|  |
 | 2. State Capture Engine | 0/TBD | Not started | - |
 | 3. Dynamic Scoring Engine | 0/TBD | Not started | - |
 | 4. RouteLLM Execution Layer | 0/TBD | Not started | - |

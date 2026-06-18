@@ -42,7 +42,7 @@ Requirements for initial release. v1 = the full scope (3 blocks + all detectors 
 
 ### Library & Packaging
 
-- [ ] **LIB-01**: The project is pip-installable (hatchling build) with a clean, documented public API surface
+- [x] **LIB-01**: The project is pip-installable (hatchling build) with a clean, documented public API surface
 - [ ] **LIB-02**: The weak→strong model pair is config-driven (default cheap API → frontier API)
 - [ ] **LIB-03**: A pytest suite covers capture, scoring, and routing, using a mock RouteLLM server for unit tests
 
@@ -79,7 +79,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LIB-01 | Phase 1 — Foundation & Contracts | Pending |
+| LIB-01 | Phase 1 — Foundation & Contracts | Complete |
 | LIB-02 | Phase 1 — Foundation & Contracts | Pending |
 | CAP-01 | Phase 2 — State Capture Engine | Pending |
 | CAP-02 | Phase 2 — State Capture Engine | Pending |
