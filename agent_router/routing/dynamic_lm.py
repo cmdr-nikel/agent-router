@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from typing import Any
 
-import dspy  # type: ignore[import-untyped]
+import dspy  # mypy: dspy.* covered by ignore_missing_imports override in pyproject.toml
 
 
-class DynamicRouteLM(dspy.BaseLM):
+class DynamicRouteLM(dspy.BaseLM):  # type: ignore[misc]
     """
     Phase 1 stub — public API surface only.
     Implemented in Phase 4.
@@ -33,5 +33,10 @@ class DynamicRouteLM(dspy.BaseLM):
         self.router = router
         self.routellm_base = routellm_base
 
-    def forward(self, prompt: str | None = None, messages: list | None = None, **kwargs: Any) -> Any:
+    def forward(
+        self,
+        prompt: str | None = None,
+        messages: list[Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
         raise NotImplementedError("DynamicRouteLM.forward implemented in Phase 4")
