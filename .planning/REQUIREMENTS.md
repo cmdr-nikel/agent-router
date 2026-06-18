@@ -9,13 +9,13 @@ Requirements for initial release. v1 = the full scope (3 blocks + all detectors 
 
 ### State Capture Engine (Block 1)
 
-- [ ] **CAP-01**: Developer wraps existing DSPy calls in `with TrajectoryTracker(session_id=...):` without changing any agent logic
-- [ ] **CAP-02**: Tracker registers via DSPy's callback system without clobbering pre-existing callbacks (uses `dspy.context(callbacks=...)`, not a `configure` replace)
-- [ ] **CAP-03**: For each step, the tracker records the active Signature identity derived from class name + sorted field names (correctly distinguishes inline `StringSignature` instances)
-- [ ] **CAP-04**: For each step, the tracker records the correct step index within a loop (ReAct outer/inner/extract calls do not cause overcounting)
-- [ ] **CAP-05**: For each step, the tracker records input token count and output length via a verified usage path (handles cache hits where cost is absent)
-- [ ] **CAP-06**: The tracker records success/failure per step via the callback `exception` argument (handles `outputs=None` on exception)
-- [ ] **CAP-07**: Telemetry is isolated per `session_id`, so concurrent agent runs do not collide
+- [x] **CAP-01**: Developer wraps existing DSPy calls in `with TrajectoryTracker(session_id=...):` without changing any agent logic
+- [x] **CAP-02**: Tracker registers via DSPy's callback system without clobbering pre-existing callbacks (uses `dspy.context(callbacks=...)`, not a `configure` replace)
+- [x] **CAP-03**: For each step, the tracker records the active Signature identity derived from class name + sorted field names (correctly distinguishes inline `StringSignature` instances)
+- [x] **CAP-04**: For each step, the tracker records the correct step index within a loop (ReAct outer/inner/extract calls do not cause overcounting)
+- [x] **CAP-05**: For each step, the tracker records input token count and output length via a verified usage path (handles cache hits where cost is absent)
+- [x] **CAP-06**: The tracker records success/failure per step via the callback `exception` argument (handles `outputs=None` on exception)
+- [x] **CAP-07**: Telemetry is isolated per `session_id`, so concurrent agent runs do not collide
 
 ### Dynamic Scoring Engine (Block 2)
 
@@ -81,13 +81,13 @@ Which phases cover which requirements. Populated during roadmap creation.
 |-------------|-------|--------|
 | LIB-01 | Phase 1 — Foundation & Contracts | Complete |
 | LIB-02 | Phase 1 — Foundation & Contracts | Complete |
-| CAP-01 | Phase 2 — State Capture Engine | Pending |
-| CAP-02 | Phase 2 — State Capture Engine | Pending |
-| CAP-03 | Phase 2 — State Capture Engine | Pending |
-| CAP-04 | Phase 2 — State Capture Engine | Pending |
-| CAP-05 | Phase 2 — State Capture Engine | Pending |
-| CAP-06 | Phase 2 — State Capture Engine | Pending |
-| CAP-07 | Phase 2 — State Capture Engine | Pending |
+| CAP-01 | Phase 2 — State Capture Engine | Complete |
+| CAP-02 | Phase 2 — State Capture Engine | Complete |
+| CAP-03 | Phase 2 — State Capture Engine | Complete |
+| CAP-04 | Phase 2 — State Capture Engine | Complete |
+| CAP-05 | Phase 2 — State Capture Engine | Complete |
+| CAP-06 | Phase 2 — State Capture Engine | Complete |
+| CAP-07 | Phase 2 — State Capture Engine | Complete |
 | SCORE-01 | Phase 3 — Dynamic Scoring Engine | Pending |
 | SCORE-02 | Phase 3 — Dynamic Scoring Engine | Pending |
 | SCORE-03 | Phase 3 — Dynamic Scoring Engine | Pending |

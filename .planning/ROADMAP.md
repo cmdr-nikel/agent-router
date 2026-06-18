@@ -48,7 +48,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   5. Two concurrent sessions running under separate `TrajectoryTracker` instances (different `session_id`) do not bleed step counts or window entries into each other
 **Plans**: 3 plans
   - [x] 02-01-PLAN.md — Wave 0: DummyLM test double + 7 RED test stubs (CAP-01..CAP-07)
-  - [ ] 02-02-PLAN.md — TrajectoryCallback core: overcount sentinel, signature identity, usage path, exception capture (CAP-03, CAP-04, CAP-05, CAP-06)
+  - [x] 02-02-PLAN.md — TrajectoryCallback core: overcount sentinel, signature identity, usage path, exception capture (CAP-03, CAP-04, CAP-05, CAP-06)
   - [ ] 02-03-PLAN.md — TrajectoryTracker wiring: dspy.context registration, registry lifecycle, session isolation (CAP-01, CAP-02, CAP-07)
 
 ### Phase 3: Dynamic Scoring Engine
@@ -94,7 +94,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Contracts | 4/4 | Complete    | 2026-06-18 |
-| 2. State Capture Engine | 1/3 | In Progress|  |
+| 2. State Capture Engine | 2/3 | In Progress|  |
 | 3. Dynamic Scoring Engine | 0/TBD | Not started | - |
 | 4. RouteLLM Execution Layer | 0/TBD | Not started | - |
 | 5. Integration & Validation | 0/TBD | Not started | - |
