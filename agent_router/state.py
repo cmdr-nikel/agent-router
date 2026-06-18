@@ -39,6 +39,24 @@ class CostRecord:
     is_cache_hit: bool
 
 
+@dataclass(frozen=True)
+class ToolEvent:
+    """Immutable record of one tool call + its observation (Phase 3, gap D-05).
+
+    Captured via on_tool_start/on_tool_end (dspy.Tool is @with_callbacks). Lives in a
+    parallel list rather than on TurnRecord because the tool runs AFTER the step's
+    (frozen) TurnRecord is created. The scoring engine reads these for flapping
+    detection and for the loop-velocity observation-change false-positive gate (P10).
+    """
+
+    call_id: str
+    tool_name: str
+    # Excluded from eq/hash (frozen auto-__hash__ can't hash a dict — same as TurnRecord WR-01).
+    tool_args: dict[str, Any] | None = field(compare=False, hash=False)
+    observation: str | None = None
+    exception: Exception | None = None
+
+
 @dataclass
 class SessionState:
     """Mutable per-session state: sliding window + routing parameters."""
@@ -48,6 +66,8 @@ class SessionState:
     current_threshold: float
     escalation_count: int
     cost_log: list  # type: ignore[type-arg]  # list[CostRecord]
+    # Parallel to window: one ToolEvent per tool call (Phase 3 / gap D-05).
+    tool_events: list[ToolEvent] = field(default_factory=list)
     # compare=False/hash=False: each Lock is a unique object, so including it would make
     # two value-identical SessionStates never compare equal (Pitfall CR-02).
     _lock: threading.Lock = field(

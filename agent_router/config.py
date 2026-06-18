@@ -26,6 +26,9 @@ class RouterConfig(BaseSettings):
     default_threshold: float = Field(default=0.11593, ge=0.0, le=1.0)
     loop_similarity_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     max_escalations_per_session: int = Field(default=3, ge=1)
+    # Scoring detector thresholds (Phase 3). All detector knobs live here so behavior
+    # changes require no code edit (SCORE-04).
+    flapping_min_repeats: int = Field(default=3, ge=2)
 
     # Model pair — override via AGENT_ROUTER_WEAK_MODEL / AGENT_ROUTER_STRONG_MODEL
     weak_model: str = "openai/gpt-4o-mini"

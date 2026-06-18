@@ -70,19 +70,29 @@ class TrajectoryTracker:
             if self.config is not None
             else _DEFAULT_WINDOW_SIZE
         )
+        initial_threshold: float = (
+            getattr(self.config, "default_threshold", 1.0) if self.config is not None else 1.0
+        )
         with _REGISTRY_LOCK:
             if self.session_id not in _SESSION_REGISTRY:
                 _SESSION_REGISTRY[self.session_id] = SessionState(
                     session_id=self.session_id,
                     window=deque(maxlen=window_size),
-                    current_threshold=1.0,
+                    current_threshold=initial_threshold,
                     escalation_count=0,
                     cost_log=[],
                 )
             self._session = _SESSION_REGISTRY[self.session_id]
 
-        # 2. Build callback bound to this session by direct object reference.
-        self._callback = TrajectoryCallback(session=self._session)
+        # 2. Build callback bound to this session by direct object reference. When a config
+        #    is provided, attach a ScoringEngine so each step is scored (Phase 3); without
+        #    a config the tracker is capture-only (Phase 2 backward-compatible).
+        scorer: Any | None = None
+        if self.config is not None:
+            from agent_router.scoring import ScoringEngine
+
+            scorer = ScoringEngine(self.config)
+        self._callback = TrajectoryCallback(session=self._session, scorer=scorer)
 
         # 3. Register via dspy.context — preserves existing callbacks (D-01 / P4).
         #    dspy.context returns a contextmanager; we enter it manually so __exit__

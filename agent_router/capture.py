@@ -13,7 +13,7 @@ from typing import Any
 
 from dspy.utils.callback import BaseCallback
 
-from agent_router.state import SessionState, TurnRecord
+from agent_router.state import SessionState, ToolEvent, TurnRecord
 
 
 def _derive_signature_name(sig: Any) -> str:
@@ -79,11 +79,18 @@ class TrajectoryCallback(BaseCallback):  # type: ignore[misc]
         parallelism there. Async (asyncio) is unaffected.
     """
 
-    def __init__(self, session: SessionState) -> None:
+    def __init__(self, session: SessionState, scorer: Any | None = None) -> None:
         self._session: SessionState = session
+        # Optional ScoringEngine (Phase 3). When set, score_and_apply runs after each
+        # captured step. None in Phase-2-style capture-only usage (backward compatible).
+        self._scorer: Any | None = scorer
+        # First module input text (the agent's question), for the structural scanner.
+        self._input_text: str = ""
         # call_id → BaseLM instance; populated in on_lm_start, consumed in on_lm_end.
         # Bounded by session lifetime (DoS mitigation T-02-04: pop on on_lm_end).
         self._pending_lm: dict[str, Any] = {}
+        # call_id → (tool_name, tool_args); populated in on_tool_start, consumed in on_tool_end.
+        self._pending_tools: dict[str, tuple[str, dict[str, Any]]] = {}
         # Last seen Predict signature; safe for single-threaded sequential DSPy modules.
         self._active_signature: str = "unknown"
         # Set of active ChainOfThought (extract) module call_ids (CAP-04). A set, not a
@@ -109,6 +116,11 @@ class TrajectoryCallback(BaseCallback):  # type: ignore[misc]
         _in_extract sentinel on ANY ChainOfThought module_start so on_lm_end can
         skip its LM call (Assumption A1 above).
         """
+        # Capture the agent's input text once (the outermost module call), for the
+        # structural-constraint scanner (SCORE-04).
+        if not self._input_text and inputs:
+            self._input_text = " ".join(str(v) for v in inputs.values())
+
         sig = getattr(instance, "signature", None)
         if sig is not None:
             self._active_signature = _derive_signature_name(sig)
@@ -217,3 +229,41 @@ class TrajectoryCallback(BaseCallback):  # type: ignore[misc]
                 exception=exception,
             )
             self._session.window.append(record)
+
+        # Phase 3: score the updated window and apply the escalation decision (cap-aware).
+        # Runs outside the lock above; score_and_apply takes the session lock itself.
+        if self._scorer is not None:
+            self._scorer.score_and_apply(self._session, self._input_text)
+
+    def on_tool_start(
+        self,
+        call_id: str,
+        instance: Any,
+        inputs: dict[str, Any],
+    ) -> None:
+        """Stash tool name + args (dspy.Tool is @with_callbacks); consumed in on_tool_end."""
+        tool_name = str(getattr(instance, "name", instance.__class__.__name__))
+        self._pending_tools[call_id] = (tool_name, dict(inputs))
+
+    def on_tool_end(
+        self,
+        call_id: str,
+        outputs: Any | None,
+        exception: Exception | None = None,
+    ) -> None:
+        """Append a ToolEvent (observation = tool output) to the session (gap D-05)."""
+        pending = self._pending_tools.pop(call_id, None)
+        if pending is None:
+            return
+        tool_name, tool_args = pending
+        observation = str(outputs) if outputs is not None else None
+        with self._session._lock:
+            self._session.tool_events.append(
+                ToolEvent(
+                    call_id=call_id,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    observation=observation,
+                    exception=exception,
+                )
+            )
