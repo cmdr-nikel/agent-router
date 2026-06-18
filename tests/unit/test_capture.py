@@ -366,6 +366,27 @@ def test_exception() -> None:
             f"got {r.output_text!r}."
         )
 
+    # IN-01 / CR-01 regression: a failed step must NOT inherit the previous
+    # successful call's token usage. On the exception path on_lm_end must not read
+    # lm.history[-1] (which still points at the prior success), so tokens are 0.
+    for r in exception_records:
+        assert r.input_token_count == 0 and r.output_token_count == 0, (
+            "Failed-step TurnRecord carries non-zero tokens — it leaked the previous "
+            f"successful call's usage (CR-01). got in={r.input_token_count} "
+            f"out={r.output_token_count}."
+        )
+
+    # WR-04: a failed extract is intentionally recorded, so 1 successful react step +
+    # a failed extract yields exactly 2 records (the documented N+1-on-failure case).
+    # This is the one path where window length exceeds the react-iteration count.
+    assert len(records) == 2, (
+        f"Expected 2 records (1 react step + 1 failed extract), got {len(records)}. "
+        "A failed extract is recorded (CAP-06) even though successful extracts are skipped (CAP-04)."
+    )
+    assert records[0].exception is None and records[-1].exception is not None, (
+        "Expected order: successful react step first, failed extract last."
+    )
+
 
 # ---------------------------------------------------------------------------
 # CAP-07 — test_isolation

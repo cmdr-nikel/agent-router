@@ -43,6 +43,11 @@ class TrajectoryTracker:
     Session registry: each TrajectoryTracker creates or looks up a SessionState in
     _SESSION_REGISTRY under _REGISTRY_LOCK (TOCTOU-safe, Pitfall CR-01). On
     __exit__, the session is removed to prevent unbounded registry growth.
+
+    Security / privacy: captured ``TurnRecord``s store raw LM ``output_text`` and
+    tool arguments, which may contain prompt-derived secrets or PII. This library
+    records what DSPy produces and applies no sanitisation — redaction and safe
+    logging of ``session.window`` contents are the caller's responsibility.
     """
 
     def __init__(

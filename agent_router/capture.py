@@ -59,8 +59,9 @@ class TrajectoryCallback(BaseCallback):  # type: ignore[misc]
         A dspy.ReAct with N iterations fires on_lm_end N+1 times: N react steps
         plus one trailing extract call from the ChainOfThought module. We detect
         the extract module via on_module_start (ChainOfThought isinstance check)
-        and set _in_extract=True for the duration of that module call.
-        on_lm_end skips record creation while _in_extract is True.
+        and track its call_id in _extract_ids for the duration of that module call.
+        on_lm_end skips record creation for successful LM calls while _extract_ids
+        is non-empty. (A failed extract is still recorded — see CAP-06 / WR-04.)
 
         Assumption A1: the extract module is always a ChainOfThought and the
         react-step modules are always Predict instances. If the user's agent uses
@@ -85,10 +86,11 @@ class TrajectoryCallback(BaseCallback):  # type: ignore[misc]
         self._pending_lm: dict[str, Any] = {}
         # Last seen Predict signature; safe for single-threaded sequential DSPy modules.
         self._active_signature: str = "unknown"
-        # Sentinel: True while the extract ChainOfThought module is active (CAP-04).
-        self._in_extract: bool = False
-        # call_id of the active extract module (cleared in on_module_end).
-        self._react_extract_id: str | None = None
+        # Set of active ChainOfThought (extract) module call_ids (CAP-04). A set, not a
+        # single id, so a nested ChainOfThought does not clear the sentinel early when
+        # its inner on_module_end fires (Pitfall WR-01). While the set is non-empty,
+        # on_lm_end suppresses record creation for successful LM calls.
+        self._extract_ids: set[str] = set()
 
     def on_module_start(
         self,
@@ -116,8 +118,7 @@ class TrajectoryCallback(BaseCallback):  # type: ignore[misc]
             from dspy.predict.chain_of_thought import ChainOfThought  # noqa: PLC0415
 
             if isinstance(instance, ChainOfThought):
-                self._in_extract = True
-                self._react_extract_id = call_id
+                self._extract_ids.add(call_id)
         except ImportError:
             pass
 
@@ -127,10 +128,8 @@ class TrajectoryCallback(BaseCallback):  # type: ignore[misc]
         outputs: Any | None,
         exception: Exception | None = None,
     ) -> None:
-        """Clear the extract sentinel once the ChainOfThought module call completes."""
-        if call_id == self._react_extract_id:
-            self._in_extract = False
-            self._react_extract_id = None
+        """Clear this call's extract sentinel once the ChainOfThought module completes."""
+        self._extract_ids.discard(call_id)
 
     def on_lm_start(
         self,
@@ -180,13 +179,16 @@ class TrajectoryCallback(BaseCallback):  # type: ignore[misc]
 
         # Skip SUCCESSFUL extract calls (the ChainOfThought trailing summary step).
         # Exception: if the extract LM call itself raised, still capture the record
-        # so that failed steps are always visible in the window (CAP-06).
-        if self._in_extract and exception is None:
+        # so that failed steps are always visible in the window (CAP-06). A failed
+        # extract therefore yields N+1 records — see TrajectoryTracker docstring (WR-04).
+        if self._extract_ids and exception is None:
             return
 
-        # Read usage from history — written by _process_lm_response before we fire.
-        # Guard: history may be empty if history is disabled globally.
-        entry: dict[str, Any] = lm.history[-1] if lm.history else {}
+        # Read usage from history ONLY on the success path. On exception,
+        # _process_lm_response never ran, so lm.history[-1] is the PREVIOUS successful
+        # call's entry — reading it would attribute another step's tokens to this failed
+        # record (Pitfall CR-01). Use an empty entry instead → 0 tokens, no cache flag.
+        entry: dict[str, Any] = lm.history[-1] if (exception is None and lm.history) else {}
         usage: dict[str, Any] = entry.get("usage", {}) or {}
         response: Any = entry.get("response") if entry else None
         is_cache_hit: bool = bool(getattr(response, "cache_hit", False))

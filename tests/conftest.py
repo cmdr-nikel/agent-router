@@ -129,8 +129,14 @@ class DummyLM(dspy.utils.DummyLM):
         item = self._raw_responses[self._call_idx]
         self._call_idx += 1
 
-        # Exception path — raise before calling super (CAP-06).
+        # Exception path (CAP-06). Advance the parent formatter's internal pointer
+        # over this slot's placeholder first so a later successful call still maps to
+        # the correct scripted response (Pitfall WR-02), then raise.
         if isinstance(item, Exception):
+            try:
+                super().forward(prompt=prompt, messages=messages, **kwargs)
+            except Exception:
+                pass
             raise item
 
         # Format the text via the parent (uses the adapter's format_field_with_value
