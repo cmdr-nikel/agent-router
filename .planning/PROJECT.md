@@ -25,7 +25,8 @@ clears the block — demonstrably, on a reproducible scenario.
 
 <!-- Shipped and confirmed valuable. -->
 
-(None yet — ship to validate)
+- ✓ **LIB-01** (pip-installable package, clean light public API, typed contracts, dir structure) — Phase 1
+- ✓ **LIB-02** (config-driven weak→strong model pair via RouterConfig + env) — Phase 1
 
 ### Active
 
@@ -110,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-18 after initialization*
+*Last updated: 2026-06-18 after Phase 1 (Foundation & Contracts) completion*
