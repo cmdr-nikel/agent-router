@@ -12,7 +12,7 @@ Build a trajectory-monitoring router for DSPy agents in four phases after a foun
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Contracts** - Package scaffold, data contracts (SessionState/TurnRecord), shared interfaces, and config
+- [x] **Phase 1: Foundation & Contracts** - Package scaffold, data contracts (SessionState/TurnRecord), shared interfaces, and config (completed 2026-06-18)
 - [ ] **Phase 2: State Capture Engine** - Non-intrusive DSPy callback integration, per-step telemetry, session isolation
 - [ ] **Phase 3: Dynamic Scoring Engine** - Sliding window, three detectors (Loop Velocity / Flapping / Structural Constraint), escalation cap
 - [ ] **Phase 4: RouteLLM Execution Layer** - DynamicRouteLM subclass, PayloadNormalizer, cost logging, RouteLLM server integration
@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 01-01-PLAN.md — Package scaffold, pyproject.toml, dev-dep install, test scaffold (LIB-01)
   - [x] 01-02-PLAN.md — Data contracts: TurnRecord/CostRecord/SessionState, mypy --strict (LIB-01)
   - [x] 01-03-PLAN.md — RouterConfig (pydantic-settings, env-driven model pair) (LIB-02)
-  - [ ] 01-04-PLAN.md — Lazy public API + TrajectoryTracker/DynamicRouteLM stubs (LIB-01)
+  - [x] 01-04-PLAN.md — Lazy public API + TrajectoryTracker/DynamicRouteLM stubs (LIB-01)
 
 ### Phase 2: State Capture Engine
 **Goal**: Developers can wrap any DSPy ReAct call in `with TrajectoryTracker(session_id=...):` and get accurate, session-isolated per-step telemetry without touching agent logic
@@ -90,7 +90,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Contracts | 3/4 | In Progress|  |
+| 1. Foundation & Contracts | 4/4 | Complete   | 2026-06-18 |
 | 2. State Capture Engine | 0/TBD | Not started | - |
 | 3. Dynamic Scoring Engine | 0/TBD | Not started | - |
 | 4. RouteLLM Execution Layer | 0/TBD | Not started | - |
