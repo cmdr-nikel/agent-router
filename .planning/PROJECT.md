@@ -28,6 +28,7 @@ clears the block — demonstrably, on a reproducible scenario.
 - ✓ **LIB-01** (pip-installable package, clean light public API, typed contracts, dir structure) — Phase 1
 - ✓ **LIB-02** (config-driven weak→strong model pair via RouterConfig + env) — Phase 1
 - ✓ **CAP-01..CAP-07** (non-intrusive State Capture Engine: `TrajectoryTracker` + `TrajectoryCallback` — accurate session-isolated per-step telemetry via DSPy callbacks, ReAct overcount handled, token/signature/exception capture) — Phase 2
+- ✓ **SCORE-01..SCORE-05** (Dynamic Scoring Engine: structural/flapping/loop-velocity detectors, fastembed bge-small + P10 false-positive gate, config-driven thresholds, per-session escalation cap; no LLM judge) — Phase 3
 
 ### Active
 
@@ -112,4 +113,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-18 after Phase 2 (State Capture Engine) completion*
+*Last updated: 2026-06-18 after Phase 3 (Dynamic Scoring Engine) completion*
