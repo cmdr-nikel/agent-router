@@ -681,7 +681,7 @@ _(Table is not empty — 3 low/medium-risk assumptions above.)_
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`DynamicRouteLM` base class: `BaseLM` vs `LM`?**
    - What we know: `dspy.LM` (subclass of `BaseLM`) has litellm dispatch built in; `dspy.BaseLM` requires you to implement `forward` from scratch. DynamicRouteLM only needs to rebuild the model string per call.
