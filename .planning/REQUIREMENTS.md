@@ -79,13 +79,36 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (to be filled by roadmapper) | — | Pending |
+| LIB-01 | Phase 1 — Foundation & Contracts | Pending |
+| LIB-02 | Phase 1 — Foundation & Contracts | Pending |
+| CAP-01 | Phase 2 — State Capture Engine | Pending |
+| CAP-02 | Phase 2 — State Capture Engine | Pending |
+| CAP-03 | Phase 2 — State Capture Engine | Pending |
+| CAP-04 | Phase 2 — State Capture Engine | Pending |
+| CAP-05 | Phase 2 — State Capture Engine | Pending |
+| CAP-06 | Phase 2 — State Capture Engine | Pending |
+| CAP-07 | Phase 2 — State Capture Engine | Pending |
+| SCORE-01 | Phase 3 — Dynamic Scoring Engine | Pending |
+| SCORE-02 | Phase 3 — Dynamic Scoring Engine | Pending |
+| SCORE-03 | Phase 3 — Dynamic Scoring Engine | Pending |
+| SCORE-04 | Phase 3 — Dynamic Scoring Engine | Pending |
+| SCORE-05 | Phase 3 — Dynamic Scoring Engine | Pending |
+| ROUTE-01 | Phase 4 — RouteLLM Execution Layer | Pending |
+| ROUTE-02 | Phase 4 — RouteLLM Execution Layer | Pending |
+| ROUTE-03 | Phase 4 — RouteLLM Execution Layer | Pending |
+| ROUTE-04 | Phase 4 — RouteLLM Execution Layer | Pending |
+| ROUTE-05 | Phase 4 — RouteLLM Execution Layer | Pending |
+| ROUTE-06 | Phase 4 — RouteLLM Execution Layer | Pending |
+| VAL-01 | Phase 5 — Integration & Validation | Pending |
+| VAL-02 | Phase 5 — Integration & Validation | Pending |
+| VAL-03 | Phase 5 — Integration & Validation | Pending |
+| LIB-03 | Phase 5 — Integration & Validation | Pending |
 
 **Coverage:**
 - v1 requirements: 21 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 21 ⚠️
+- Mapped to phases: 21 (100%) ✓
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-18*
-*Last updated: 2026-06-18 after initial definition*
+*Last updated: 2026-06-18 after roadmap creation — all 21 requirements mapped*
