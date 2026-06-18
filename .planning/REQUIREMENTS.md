@@ -19,11 +19,11 @@ Requirements for initial release. v1 = the full scope (3 blocks + all detectors 
 
 ### Dynamic Scoring Engine (Block 2)
 
-- [ ] **SCORE-01**: The engine maintains a sliding window of the last N turns per session
-- [ ] **SCORE-02**: Loop Velocity Profiler flags when similar inputs produce repeating output embeddings across consecutive turns; it also embeds the observation so a changed observation is treated as progress, not a loop
-- [ ] **SCORE-03**: Tool-Call Flapping Monitor flags when the same tool is called with slightly varied params more than twice without a state change
-- [ ] **SCORE-04**: Structural Constraint Scanner uses programmatic regex (not semantics) to detect strict-format demands (JSON Schema, valid XML, compilable syntax) and bypasses standard routing; this override path is evaluated before the probabilistic scoring
-- [ ] **SCORE-05**: All scoring is based on mathematical telemetry, regex, or post-generation tracking only — no pre-inference LLM judge
+- [x] **SCORE-01**: The engine maintains a sliding window of the last N turns per session
+- [x] **SCORE-02**: Loop Velocity Profiler flags when similar inputs produce repeating output embeddings across consecutive turns; it also embeds the observation so a changed observation is treated as progress, not a loop
+- [x] **SCORE-03**: Tool-Call Flapping Monitor flags when the same tool is called with slightly varied params more than twice without a state change
+- [x] **SCORE-04**: Structural Constraint Scanner uses programmatic regex (not semantics) to detect strict-format demands (JSON Schema, valid XML, compilable syntax) and bypasses standard routing; this override path is evaluated before the probabilistic scoring
+- [x] **SCORE-05**: All scoring is based on mathematical telemetry, regex, or post-generation tracking only — no pre-inference LLM judge
 
 ### RouteLLM Execution Layer (Block 3)
 
@@ -88,11 +88,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CAP-05 | Phase 2 — State Capture Engine | Complete |
 | CAP-06 | Phase 2 — State Capture Engine | Complete |
 | CAP-07 | Phase 2 — State Capture Engine | Complete |
-| SCORE-01 | Phase 3 — Dynamic Scoring Engine | Pending |
-| SCORE-02 | Phase 3 — Dynamic Scoring Engine | Pending |
-| SCORE-03 | Phase 3 — Dynamic Scoring Engine | Pending |
-| SCORE-04 | Phase 3 — Dynamic Scoring Engine | Pending |
-| SCORE-05 | Phase 3 — Dynamic Scoring Engine | Pending |
+| SCORE-01 | Phase 3 — Dynamic Scoring Engine | Complete |
+| SCORE-02 | Phase 3 — Dynamic Scoring Engine | Complete |
+| SCORE-03 | Phase 3 — Dynamic Scoring Engine | Complete |
+| SCORE-04 | Phase 3 — Dynamic Scoring Engine | Complete |
+| SCORE-05 | Phase 3 — Dynamic Scoring Engine | Complete |
 | ROUTE-01 | Phase 4 — RouteLLM Execution Layer | Pending |
 | ROUTE-02 | Phase 4 — RouteLLM Execution Layer | Pending |
 | ROUTE-03 | Phase 4 — RouteLLM Execution Layer | Pending |

@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation & Contracts** - Package scaffold, data contracts (SessionState/TurnRecord), shared interfaces, and config (completed 2026-06-18)
 - [x] **Phase 2: State Capture Engine** - Non-intrusive DSPy callback integration, per-step telemetry, session isolation (completed 2026-06-18)
-- [ ] **Phase 3: Dynamic Scoring Engine** - Sliding window, three detectors (Loop Velocity / Flapping / Structural Constraint), escalation cap
+- [x] **Phase 3: Dynamic Scoring Engine** - Sliding window, three detectors (Loop Velocity / Flapping / Structural Constraint), escalation cap (completed 2026-06-18)
 - [ ] **Phase 4: RouteLLM Execution Layer** - DynamicRouteLM subclass, PayloadNormalizer, cost logging, RouteLLM server integration
 - [ ] **Phase 5: Integration & Validation** - End-to-end wiring, synthetic loop bench, real benchmark, full pytest suite
 
@@ -95,6 +95,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Contracts | 4/4 | Complete    | 2026-06-18 |
 | 2. State Capture Engine | 3/3 | Complete    | 2026-06-18 |
-| 3. Dynamic Scoring Engine | 0/TBD | Not started | - |
+| 3. Dynamic Scoring Engine | 0/0 | Complete    | 2026-06-18 |
 | 4. RouteLLM Execution Layer | 0/TBD | Not started | - |
 | 5. Integration & Validation | 0/TBD | Not started | - |
