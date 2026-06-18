@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 4 plans
   - [x] 01-01-PLAN.md — Package scaffold, pyproject.toml, dev-dep install, test scaffold (LIB-01)
   - [x] 01-02-PLAN.md — Data contracts: TurnRecord/CostRecord/SessionState, mypy --strict (LIB-01)
-  - [ ] 01-03-PLAN.md — RouterConfig (pydantic-settings, env-driven model pair) (LIB-02)
+  - [x] 01-03-PLAN.md — RouterConfig (pydantic-settings, env-driven model pair) (LIB-02)
   - [ ] 01-04-PLAN.md — Lazy public API + TrajectoryTracker/DynamicRouteLM stubs (LIB-01)
 
 ### Phase 2: State Capture Engine
@@ -90,7 +90,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Contracts | 2/4 | In Progress|  |
+| 1. Foundation & Contracts | 3/4 | In Progress|  |
 | 2. State Capture Engine | 0/TBD | Not started | - |
 | 3. Dynamic Scoring Engine | 0/TBD | Not started | - |
 | 4. RouteLLM Execution Layer | 0/TBD | Not started | - |
