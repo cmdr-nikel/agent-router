@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+*.egg
+
+# Virtual envs
+.venv/
+venv/
+env/
+.conda/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.dspy_cache/
+.hypothesis/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# Models / embeddings cache (fastembed)
+.fastembed_cache/
+*.onnx

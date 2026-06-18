@@ -1,0 +1,51 @@
+To build a trajectory-monitoring router that solves the "Routing Plateau" by bridging DSPy (compile-time prompt/flow optimization) and RouteLLM (runtime cost/quality routing), we need a razor-sharp engineering boundary.
+This is the exact functional scope for a production-ready repository. It bridges the gap between DSPy’s assertion layers and RouteLLM’s underlying API translation infrastructure.
+The System Architecture Block
+┌────────────────────────────────────────────────────────────────┐
+│                           USER SPACE                           │
+│     (User writes native DSPy Modules, Signatures, & Loops)     │
+└───────────────────────────────┬────────────────────────────────┘
+                                │
+                                ▼
+┌────────────────────────────────────────────────────────────────┐
+│                   1. THE STATE CAPTURE ENGINE                  │
+│       (DSPy Callback / Middleware tracking Graph Turns)        │
+└───────────────────────────────┬────────────────────────────────┘
+                                │
+                                ▼
+┌────────────────────────────────────────────────────────────────┐
+│                2. DYNAMIC SCORING ENGINE (THE BRAIN)           │
+│     (Evaluates Loop Velocity, Flapping, & Token Spikes)        │
+└───────────────────────────────┬────────────────────────────────┘
+                                │
+                                ▼
+┌────────────────────────────────────────────────────────────────┐
+│               3. ROUTELLM DEPLOYMENT ROUTER (PROXY)            │
+│      (Executes fallback logic or forces frontier routing)      │
+└────────────────────────────────────────────────────────────────┘
+1. Scope of the State Capture Engine (DSPy Integration)
+The goal here is to make the system completely non-intrusive. The developer shouldn't change their agent logic; the tracker must run silently underneath.
+Stateful Context Manager: A class that wraps DSPy commands using a Python context manager (with TrajectoryTracker(session_id="xyz"):).
+Turn & Metric Interceptor: Hooks into DSPy’s built-in trace logging or overrides the custom dspy.LM call method.
+What it must capture per step:
+The active dspy.Signature class name (e.g., GenerateCode, VerifyAnswer).
+The current step index within the loop execution.
+Input token count vs. expected output length.
+Success/failure signals (intercepting standard exceptions or dspy.Suggest / dspy.Assert validation failures).
+2. Scope of the Dynamic Scoring Engine (The Core Brain)
+This is where you fix the biases of traditional embedding routers. Instead of evaluating a single prompt string, this engine maintains a sliding window of the last $N$ turns for a given session.
+Loop Velocity Profiler: Tracks if identical or closely-related text inputs are generating repeating output embeddings across consecutive turns (indicates an agent stuck in a reasoning loop).
+Tool-Call Flapping Monitor: Inspects the generated output payloads. If the agent calls the exact same tool name with slight variation parameters more than twice without modifying the state, flag it.
+Structural Constraint Scanner: Parses the input prompt using programmatic regex rules rather than semantics. If it contains terms demanding strict formatting compliance (e.g., JSON Schema, Valid XML, executable compiler syntax), it bypasses standard routing profiles entirely.
+3. Scope of the RouteLLM Execution Layer
+Instead of treating RouteLLM as a basic static web proxy server, we treat it as an adaptive network routing table that can have its variables tweaked mid-execution.
+Dynamic Threshold Injector: Standard RouteLLM takes a fixed --threshold flag when initialized (e.g., 0.5 balance between cost and quality). The scope must include extending RouteLLM's internal API controller to accept an optional header parameter: X-RouteLLM-Threshold.
+Automated Escalation Protocol: If the Dynamic Scoring Engine flags an anomaly (looping or validation errors):
+The code instantly drops the routing threshold to 0.0 for the next API call.
+This forces RouteLLM to automatically bypass the cheap Small Language Model (SLM) and route straight to the frontier model (e.g., Claude 4 / GPT-5) to clear the block.
+Payload Shape Normalization: A translation module that ensures if DSPy tries to append few-shot training examples, they pass transparently through RouteLLM without mutating the core dictionary structure, avoiding KeyError payload crashes.
+Out of Scope (What You Should NOT Build)
+To avoid over-engineering and stay focused on solving the core problem, explicitly exclude the following from your technical scope:
+No Custom Web Gateway: Do not write your own network proxy, handle multi-provider API keys, or build custom rate-limiting algorithms. Let RouteLLM and LiteLLM handle 100% of the raw plumbing.
+No Pre-Inference LLM Judges: Do not allow the router to initiate an independent LLM-as-a-judge query before routing a step. All analysis must be based on mathematical state telemetry, programmatic regex extraction, or post-generation tracking.
+No Flow Compiling: Do not attempt to replace DSPy's built-in optimizers (like MIPROv2). Your framework compiles the runtime operational safety and costs, while DSPy continues to compile the prompts and structural weights.
