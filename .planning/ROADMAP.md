@@ -13,7 +13,7 @@ Build a trajectory-monitoring router for DSPy agents in four phases after a foun
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation & Contracts** - Package scaffold, data contracts (SessionState/TurnRecord), shared interfaces, and config (completed 2026-06-18)
-- [ ] **Phase 2: State Capture Engine** - Non-intrusive DSPy callback integration, per-step telemetry, session isolation
+- [x] **Phase 2: State Capture Engine** - Non-intrusive DSPy callback integration, per-step telemetry, session isolation (completed 2026-06-18)
 - [ ] **Phase 3: Dynamic Scoring Engine** - Sliding window, three detectors (Loop Velocity / Flapping / Structural Constraint), escalation cap
 - [ ] **Phase 4: RouteLLM Execution Layer** - DynamicRouteLM subclass, PayloadNormalizer, cost logging, RouteLLM server integration
 - [ ] **Phase 5: Integration & Validation** - End-to-end wiring, synthetic loop bench, real benchmark, full pytest suite
@@ -49,7 +49,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
   - [x] 02-01-PLAN.md — Wave 0: DummyLM test double + 7 RED test stubs (CAP-01..CAP-07)
   - [x] 02-02-PLAN.md — TrajectoryCallback core: overcount sentinel, signature identity, usage path, exception capture (CAP-03, CAP-04, CAP-05, CAP-06)
-  - [ ] 02-03-PLAN.md — TrajectoryTracker wiring: dspy.context registration, registry lifecycle, session isolation (CAP-01, CAP-02, CAP-07)
+  - [x] 02-03-PLAN.md — TrajectoryTracker wiring: dspy.context registration, registry lifecycle, session isolation (CAP-01, CAP-02, CAP-07)
 
 ### Phase 3: Dynamic Scoring Engine
 **Goal**: After each ReAct step, the scoring engine analyzes the session window and correctly flags reasoning loops, tool-call flapping, and structural constraint demands — with every threshold exposed as config and a per-session escalation cap in place before any real model calls are made
@@ -94,7 +94,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Contracts | 4/4 | Complete    | 2026-06-18 |
-| 2. State Capture Engine | 2/3 | In Progress|  |
+| 2. State Capture Engine | 3/3 | Complete   | 2026-06-18 |
 | 3. Dynamic Scoring Engine | 0/TBD | Not started | - |
 | 4. RouteLLM Execution Layer | 0/TBD | Not started | - |
 | 5. Integration & Validation | 0/TBD | Not started | - |
