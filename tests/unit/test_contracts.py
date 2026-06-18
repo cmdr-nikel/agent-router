@@ -151,3 +151,52 @@ def test_session_state_fields_present() -> None:
     }
     missing = required_fields - field_names
     assert not missing, f"SessionState is missing D-06 fields: {missing}"
+
+
+def test_turn_record_is_hashable_with_tool_args() -> None:
+    """
+    A frozen TurnRecord carrying a dict tool_args must remain hashable (WR-01):
+    tool_args is excluded from the auto-generated __hash__/__eq__.
+    """
+    from agent_router.state import TurnRecord
+
+    record = TurnRecord(
+        call_id="c1",
+        step_idx=0,
+        signature_name="ReAct[q->a]",
+        tool_name="search",
+        tool_args={"query": "weather", "limit": 5},
+        input_token_count=10,
+        output_token_count=5,
+        output_text="...",
+        cache_hit=False,
+        exception=None,
+    )
+    # Must not raise TypeError: unhashable type: 'dict'
+    assert isinstance(hash(record), int)
+
+
+def test_session_state_equality_ignores_lock() -> None:
+    """
+    Two value-identical SessionStates must compare equal — the per-instance Lock is
+    excluded from __eq__ (CR-02).
+    """
+    from agent_router.state import SessionState
+
+    def make() -> SessionState:
+        return SessionState(
+            session_id="s1",
+            window=deque(maxlen=10),
+            current_threshold=0.11593,
+            escalation_count=0,
+            cost_log=[],
+        )
+
+    assert make() == make()
+
+
+def test_registry_lock_exists() -> None:
+    """A module-level registry lock guards check-then-insert on the session registry (CR-01)."""
+    from agent_router import state
+
+    assert isinstance(state._REGISTRY_LOCK, threading.Lock)

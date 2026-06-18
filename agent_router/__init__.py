@@ -25,3 +25,9 @@ def __getattr__(name: str) -> object:
         globals()[name] = val  # cache to avoid repeated __getattr__ calls
         return val
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    # PEP 562: surface the lazily-exported names so dir()/IDE completion/help()
+    # see TrajectoryTracker and DynamicRouteLM before first access (Pitfall WR-03).
+    return sorted(set(globals()) | set(_LAZY_MAP))

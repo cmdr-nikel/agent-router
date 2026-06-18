@@ -6,11 +6,22 @@ from __future__ import annotations
 import os
 
 
-def test_router_config_fields() -> None:
+def test_router_config_fields(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """
     RouterConfig must expose the 6 D-05 fields with correct defaults.
-    Status: GREEN from Task 2.
+    Defaults are asserted, so strip any AGENT_ROUTER_* overrides the host env
+    might carry (IN-02) to keep the test hermetic.
     """
+    for key in (
+        "AGENT_ROUTER_WINDOW_SIZE",
+        "AGENT_ROUTER_DEFAULT_THRESHOLD",
+        "AGENT_ROUTER_LOOP_SIMILARITY_THRESHOLD",
+        "AGENT_ROUTER_MAX_ESCALATIONS_PER_SESSION",
+        "AGENT_ROUTER_WEAK_MODEL",
+        "AGENT_ROUTER_STRONG_MODEL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
     from agent_router.config import RouterConfig
 
     cfg = RouterConfig()

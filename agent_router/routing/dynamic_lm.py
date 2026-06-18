@@ -32,6 +32,8 @@ class DynamicRouteLM(dspy.BaseLM):  # type: ignore[misc]
         self.session_id = session_id
         self.router = router
         self.routellm_base = routellm_base
+        # Stored so Phase 4 can build the OpenAI/RouteLLM client (Pitfall WR-02).
+        self.api_key = api_key
 
     def forward(
         self,

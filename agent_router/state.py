@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -15,7 +16,10 @@ class TurnRecord:
     step_idx: int
     signature_name: str  # class.__name__ + sorted(input_fields + output_fields)
     tool_name: str | None
-    tool_args: dict | None  # type: ignore[type-arg]
+    # Excluded from eq/hash so the frozen auto-__hash__ doesn't choke on an unhashable
+    # dict (Pitfall WR-01). The flapping monitor (Phase 2) compares tool_args explicitly,
+    # not via TurnRecord equality.
+    tool_args: dict[str, Any] | None = field(compare=False, hash=False)
     input_token_count: int
     output_token_count: int
     output_text: str | None  # raw LM output; NO output_embedding here (lazy in Phase 3)
@@ -44,9 +48,19 @@ class SessionState:
     current_threshold: float
     escalation_count: int
     cost_log: list  # type: ignore[type-arg]  # list[CostRecord]
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    # compare=False/hash=False: each Lock is a unique object, so including it would make
+    # two value-identical SessionStates never compare equal (Pitfall CR-02).
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False, compare=False, hash=False
+    )
 
 
 # Module-level registry: keyed by session_id.
 # TODO: TrajectoryTracker.__exit__ must delete entries to prevent unbounded growth (Phase 2).
 _SESSION_REGISTRY: dict[str, SessionState] = {}
+
+# Guards the check-then-insert on _SESSION_REGISTRY (Pitfall CR-01: TOCTOU race).
+# Phase 2's TrajectoryTracker.__enter__ MUST hold this around registry mutation:
+#     with _REGISTRY_LOCK:
+#         if session_id not in _SESSION_REGISTRY: _SESSION_REGISTRY[session_id] = ...
+_REGISTRY_LOCK: threading.Lock = threading.Lock()
