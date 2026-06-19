@@ -53,16 +53,16 @@ class ScoringResult:
 # Shared embedding infrastructure
 # ---------------------------------------------------------------------------
 
-# Module-level cache: call_id → embedding vector.  Shared by all embedding-based
-# detectors so each text is embedded at most once per session lifetime.
-# Growth is bounded by session window size (maxlen on the deque) × sessions alive.
-_EMBEDDING_CACHE: dict[str, Any] = {}
 
+def _get_embedding(call_id: str, text: str, cache: dict[str, Any]) -> Any:
+    """Look up or compute the embedding for *text*, storing it in the given instance cache.
 
-def _get_embedding(call_id: str, text: str) -> Any:
-    if call_id not in _EMBEDDING_CACHE:
-        _EMBEDDING_CACHE[call_id] = _Embedder.encode(text)
-    return _EMBEDDING_CACHE[call_id]
+    The cache is keyed by call_id and is owned by the ScoringEngine instance so it is
+    isolated per session — no cross-session collisions (H1 fix).
+    """
+    if call_id not in cache:
+        cache[call_id] = _Embedder.encode(text)
+    return cache[call_id]
 
 
 def _cosine(a: Any, b: Any) -> float:
@@ -310,7 +310,14 @@ class SemanticVelocityDetector:
     Low average distance = the agent is producing nearly-identical reasoning
     on each step without progressing.  Also emits a de-escalation signal when
     velocity recovers strongly after a previous escalation.
+
+    *cache* is an instance-level dict (owned by the parent ScoringEngine) that
+    maps call_id → embedding vector so texts are embedded at most once per session
+    and isolated across sessions (H1 fix).
     """
+
+    def __init__(self, cache: dict[str, Any]) -> None:
+        self._cache = cache
 
     def detect(self, session: SessionState, config: RouterConfig) -> ScoringResult:
         window = [r for r in session.window if r.output_text]
@@ -321,11 +328,15 @@ class SemanticVelocityDetector:
         for i in range(1, len(window)):
             prev = window[i - 1]
             curr = window[i]
-            assert prev.output_text is not None  # guarded by list comprehension above
-            assert curr.output_text is not None
+            if prev.output_text is None or curr.output_text is None:
+                raise ValueError(
+                    f"output_text must not be None for call_ids "
+                    f"{prev.call_id!r} / {curr.call_id!r} "
+                    "(guarded by list comprehension above — this should never happen)"
+                )
             sim = _cosine(
-                _get_embedding(prev.call_id, prev.output_text),
-                _get_embedding(curr.call_id, curr.output_text),
+                _get_embedding(prev.call_id, prev.output_text, self._cache),
+                _get_embedding(curr.call_id, curr.output_text, self._cache),
             )
             distances.append(1.0 - sim)
 
@@ -334,11 +345,16 @@ class SemanticVelocityDetector:
 
         avg_velocity = sum(distances) / len(distances)
 
-        # De-escalation: trajectory recovered visibly after a strong-model call.
+        # De-escalation: use only the most-recent K consecutive pairs so that
+        # early stuck steps do not drag the recovery signal down (M3 fix).
+        k = config.de_escalation_recent_k
+        recent_distances = distances[-k:] if k < len(distances) else distances
+        recent_velocity = sum(recent_distances) / len(recent_distances)
+
         if (
             config.de_escalation_enabled
             and session.escalation_count > 0
-            and avg_velocity
+            and recent_velocity
             >= config.semantic_velocity_threshold * config.de_escalation_velocity_multiplier
         ):
             return ScoringResult(anomaly=False, score=avg_velocity, de_escalate=True)
@@ -369,7 +385,13 @@ class LoopVelocityProfiler:
     exercise it directly and check for 'detector=LoopVelocityProfiler' in logs)
     continue to pass.  For new signal work, prefer SemanticVelocityDetector which
     evaluates the whole window rather than just the last two steps.
+
+    *cache* is an instance-level dict shared with SemanticVelocityDetector so each
+    text is embedded at most once per session (H1 fix).
     """
+
+    def __init__(self, cache: dict[str, Any]) -> None:
+        self._cache = cache
 
     def detect(self, session: SessionState, config: RouterConfig) -> ScoringResult:
         window = list(session.window)
@@ -379,8 +401,8 @@ class LoopVelocityProfiler:
         if not prev.output_text or not curr.output_text:
             return ScoringResult(anomaly=False)
         sim = _cosine(
-            _get_embedding(prev.call_id, prev.output_text),
-            _get_embedding(curr.call_id, curr.output_text),
+            _get_embedding(prev.call_id, prev.output_text, self._cache),
+            _get_embedding(curr.call_id, curr.output_text, self._cache),
         )
         if sim < config.loop_similarity_threshold:
             return ScoringResult(anomaly=False, score=sim)
@@ -443,8 +465,13 @@ class ScoringEngine:
 
     def __init__(self, config: RouterConfig) -> None:
         self.config = config
-        self._semantic_velocity = SemanticVelocityDetector()
-        self._loop = LoopVelocityProfiler()
+        # Per-instance embedding cache: call_id → vector.  Shared by both embedding-based
+        # detectors so each text is embedded at most once per session, and GC'd together with
+        # this ScoringEngine (which is created per-session in tracker.py:94).  Isolates across
+        # test runs and concurrent sessions — no module-global state (H1 fix).
+        self._embedding_cache: dict[str, Any] = {}
+        self._semantic_velocity = SemanticVelocityDetector(self._embedding_cache)
+        self._loop = LoopVelocityProfiler(self._embedding_cache)
 
     def score(self, session: SessionState, input_text: str = "") -> ScoringResult:
         # 1. Structural (regex on input prompt)
