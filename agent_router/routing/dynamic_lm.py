@@ -37,11 +37,13 @@ class DynamicRouteLM(dspy.LM):  # type: ignore[misc]
         api_base: str = "http://localhost:6060/v1",
         api_key: str = "",
         default_threshold: float = 0.11593,
+        max_escalations_per_session: int = 3,
         **kwargs: Any,
     ) -> None:
         self.session_id = session_id
         self.router = router
         self.default_threshold = default_threshold
+        self.max_escalations_per_session = max_escalations_per_session
         self._model_lock = threading.Lock()
         super().__init__(
             model=self._model_string(default_threshold),
@@ -59,10 +61,16 @@ class DynamicRouteLM(dspy.LM):  # type: ignore[misc]
         session = _SESSION_REGISTRY.get(self.session_id)
         if session is None:
             return self.default_threshold
-        # escalate_session=True means a persistent anomaly was detected (e.g. step overrun,
-        # sustained low semantic velocity); all remaining calls route to the strong model.
+        # H2 fix: escalate_session=True means a persistent anomaly was detected (e.g. step
+        # overrun, sustained low semantic velocity); remaining calls should route to the strong
+        # model — BUT only while the per-session escalation cap has NOT been reached.
+        # Once max_escalations_per_session is exhausted the cost safety valve wins and we stop
+        # forcing threshold=0.0 even when the sticky flag is set.
         if session.escalate_session:
-            return 0.0
+            if session.escalation_count < self.max_escalations_per_session:
+                return 0.0
+            # Cap reached — clear the sticky flag so future calls are not silently escalated.
+            session.escalate_session = False
         return session.current_threshold
 
     @staticmethod

@@ -70,6 +70,9 @@ class RouterConfig(BaseSettings):
     # Velocity must exceed semantic_velocity_threshold * this multiplier to trigger
     # de-escalation (requires a clear recovery signal, not just marginal improvement).
     de_escalation_velocity_multiplier: float = Field(default=2.0, ge=1.0)
+    # M3: judge recovery on the most-recent K consecutive pairs, not the whole window.
+    # Env-override: AGENT_ROUTER_DE_ESCALATION_RECENT_K
+    de_escalation_recent_k: int = Field(default=3, ge=1)
 
     # Model pair — override via AGENT_ROUTER_WEAK_MODEL / AGENT_ROUTER_STRONG_MODEL
     weak_model: str = "openai/gpt-4o-mini"

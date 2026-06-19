@@ -223,20 +223,37 @@ def _estimate_complexity(input_text: str) -> int:
 def detect_step_overrun(
     session: SessionState, config: RouterConfig, input_text: str
 ) -> ScoringResult:
-    """Flag when the agent is taking far more steps than the task suggests it needs."""
+    """Flag when the agent is taking far more steps than the task suggests it needs.
+
+    M1 fixes:
+    - Non-sticky: does not set escalate_session=True so de-escalation can still fire.
+    - Counts steps-since-last-progress (last observation change) rather than the
+      absolute window length, which was monotonically increasing and would permanently
+      block the SemanticVelocityDetector's de-escalation path.
+    """
     window = list(session.window)
     if not window or not input_text.strip():
         return ScoringResult(anomaly=False)
-    actual = len(window)
+
+    # Find the index of the last observation that differed from its predecessor.
+    events = session.tool_events
+    last_progress_idx = 0  # index into window (0 = no progress observed yet)
+    for i in range(1, len(events)):
+        if (events[i].observation or "") != (events[i - 1].observation or ""):
+            # Map tool-event index to window position (parallel by construction).
+            last_progress_idx = min(i, len(window) - 1)
+
+    # Steps taken since the last observation change (1-based so it's non-zero at step 1).
+    actual = len(window) - last_progress_idx
     expected = _estimate_complexity(input_text)
-    ratio = actual / expected
+    ratio = actual / max(expected, 1)
     if ratio >= config.step_overrun_factor:
         return ScoringResult(
             anomaly=True,
             kind="step_overrun",
             score=ratio,
             detector="StepOverrunDetector",
-            escalate_session=True,
+            # NOT escalate_session — non-sticky so de-escalation can still clear the block.
         )
     return ScoringResult(anomaly=False, score=ratio)
 
@@ -247,14 +264,18 @@ def detect_step_overrun(
 
 
 def detect_burn_acceleration(session: SessionState, config: RouterConfig) -> ScoringResult:
-    """Flag when tokens-per-step in the second half of the window is accelerating
+    """Flag when output tokens-per-step in the second half of the window is accelerating
     relative to the first half — a sign the agent is generating more text per step
     without making progress (elaboration / confusion spiral).
+
+    M2 fix: uses output_token_count only (not input + output).  In ReAct the input
+    grows every step because history is re-sent, so summing input+output would trigger
+    false positives for any long-but-healthy agent.
     """
     window = list(session.window)
     if len(window) < config.burn_window_min_steps:
         return ScoringResult(anomaly=False)
-    tokens = [r.input_token_count + r.output_token_count for r in window]
+    tokens = [r.output_token_count for r in window]
     mid = len(tokens) // 2
     first_avg = sum(tokens[:mid]) / mid if mid > 0 else 0.0
     second_avg = sum(tokens[mid:]) / (len(tokens) - mid)
