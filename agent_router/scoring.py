@@ -161,24 +161,50 @@ def detect_exception_rate(session: SessionState, config: RouterConfig) -> Scorin
 # 3. Hedging Density Detector — uncertainty markers in the latest output
 # ---------------------------------------------------------------------------
 
+# L1 fix: patterns are tightened to reduce false positives in normal CoT text.
+# Removed over-broad phrases ("I think", "possibly", "it seems") that commonly appear
+# in non-hedging reasoning contexts.  Remaining patterns require explicit inability or
+# uncertainty markers; "I cannot determine" was merged into "I cannot" to eliminate the
+# overlap that caused double-counting.
+#
+# Detection counts distinct non-overlapping match SPANS across all patterns rather than
+# the number of pattern hits (which double-counted when patterns overlap on the same text).
 _HEDGING_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(p, re.IGNORECASE)
     for p in (
         r"\bI(?:'m| am) not sure\b",
-        r"\bI think\b",
-        r"\bit seems\b",
-        r"\bI cannot determine\b",
         r"\bI don'?t know\b",
         r"\bI(?:'m| am) unable\b",
         r"\bunable to\b",
-        r"\bI cannot\b",
+        r"\bI cannot\b",        # covers "I cannot determine", "I cannot answer", etc.
         r"\bI(?:'m| am) not able\b",
         r"\bI(?:'m| am) unsure\b",
         r"\bI(?:'m| am) having trouble\b",
-        r"\bpossibly\b",
         r"\bI(?:'m| am) confused\b",
     )
 )
+
+
+def _count_distinct_hedging_spans(text: str) -> int:
+    """Count distinct non-overlapping match spans across all _HEDGING_PATTERNS.
+
+    Collecting all spans first and then de-overlapping prevents one multi-word phrase
+    from incrementing the count more than once (L1 fix: no double-counting).
+    """
+    spans: list[tuple[int, int]] = []
+    for pat in _HEDGING_PATTERNS:
+        for m in pat.finditer(text):
+            spans.append((m.start(), m.end()))
+    # Sort by start; greedily collect non-overlapping spans.
+    spans.sort()
+    merged: list[tuple[int, int]] = []
+    for start, end in spans:
+        if merged and start < merged[-1][1]:
+            # Overlaps with the previous span — extend it but do not add a new count.
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return len(merged)
 
 
 def detect_hedging(session: SessionState, config: RouterConfig) -> ScoringResult:
@@ -189,7 +215,7 @@ def detect_hedging(session: SessionState, config: RouterConfig) -> ScoringResult
     latest = window[-1]
     if not latest.output_text:
         return ScoringResult(anomaly=False)
-    matches = sum(1 for p in _HEDGING_PATTERNS if p.search(latest.output_text))
+    matches = _count_distinct_hedging_spans(latest.output_text)
     if matches >= config.hedging_min_matches:
         return ScoringResult(
             anomaly=True,
