@@ -68,6 +68,11 @@ class SessionState:
     cost_log: list  # type: ignore[type-arg]  # list[CostRecord]
     # Parallel to window: one ToolEvent per tool call (Phase 3 / gap D-05).
     tool_events: list[ToolEvent] = field(default_factory=list)
+    # When True, DynamicRouteLM forces threshold=0.0 for ALL remaining calls in the session
+    # (set by ScoringEngine when a persistent anomaly is detected, e.g. step overrun or
+    # sustained low semantic velocity).  Cleared by de-escalation logic when the trajectory
+    # recovers after a strong-model call.
+    escalate_session: bool = False
     # compare=False/hash=False: each Lock is a unique object, so including it would make
     # two value-identical SessionStates never compare equal (Pitfall CR-02).
     _lock: threading.Lock = field(

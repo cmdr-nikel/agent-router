@@ -57,7 +57,13 @@ class DynamicRouteLM(dspy.LM):  # type: ignore[misc]
 
     def _current_threshold(self) -> float:
         session = _SESSION_REGISTRY.get(self.session_id)
-        return session.current_threshold if session is not None else self.default_threshold
+        if session is None:
+            return self.default_threshold
+        # escalate_session=True means a persistent anomaly was detected (e.g. step overrun,
+        # sustained low semantic velocity); all remaining calls route to the strong model.
+        if session.escalate_session:
+            return 0.0
+        return session.current_threshold
 
     @staticmethod
     def _normalize_messages(messages: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:

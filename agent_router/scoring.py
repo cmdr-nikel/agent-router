@@ -1,10 +1,24 @@
 # agent_router/scoring.py
 # Dynamic Scoring Engine (Block 2). Reads SessionState.window + tool_events, flags
-# reasoning loops / tool-call flapping / structural-constraint demands, and applies the
-# per-session escalation cap. Telemetry/regex/embedding only — NO LM judge (SCORE-05).
+# trajectory pathologies, and applies routing decisions (escalate / de-escalate).
 #
-# Light-import discipline: fastembed is imported LAZILY inside the loop profiler so that
-# `import agent_router` (and scoring of structural/flapping cases) never loads onnxruntime.
+# Detectors in priority order (cheap → expensive):
+#   1. StructuralConstraintScanner  — regex on input prompt (free)
+#   2. ExceptionRateDetector        — exception count in recent window (free)
+#   3. HedgingDensityDetector       — regex on latest output (free)
+#   4. StepOverrunDetector          — step count vs estimated complexity (free)
+#   5. TokenBurnAccelerationDetector — token-per-step trend (free)
+#   6. ToolCallFlappingMonitor      — same-tool / same-observation counter (free)
+#   7. SemanticVelocityDetector     — avg cosine distance across window (embeddings)
+#   8. LoopVelocityProfiler         — consecutive-pair cosine (embeddings, kept for compat)
+#
+# Routing actions (stored on ScoringResult):
+#   anomaly=True                 → escalate the next single call (threshold → 0.0)
+#   anomaly=True, escalate_session=True → escalate ALL remaining calls in session
+#   anomaly=False, de_escalate=True     → trajectory recovered; reset threshold to default
+#
+# Light-import discipline: fastembed is imported LAZILY inside embedding-based detectors
+# so that `import agent_router` never loads onnxruntime.
 from __future__ import annotations
 
 import logging
@@ -24,72 +38,31 @@ class ScoringResult:
     """Outcome of scoring one session window after a step."""
 
     anomaly: bool
-    kind: str | None = None  # structural_constraint | tool_flapping | loop_velocity
-    score: float = 0.0
-    detector: str | None = None
+    kind: str | None = None       # detector-specific label
+    score: float = 0.0            # numeric magnitude (interpretation depends on kind)
+    detector: str | None = None   # class/function name that produced the result
+    # When True the scoring engine will set session.escalate_session so ALL remaining
+    # calls in the session route through the strong model (not just the next one).
+    escalate_session: bool = False
+    # When True (anomaly must be False) the trajectory has recovered after an escalation;
+    # score_and_apply resets current_threshold to default_threshold.
+    de_escalate: bool = False
 
 
-# --- Structural Constraint Scanner (SCORE-04): regex only, runs first ---------------
+# ---------------------------------------------------------------------------
+# Shared embedding infrastructure
+# ---------------------------------------------------------------------------
 
-# Tunable in one place. Heuristic: matches demands for strict machine-readable formats.
-_STRUCTURAL_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
-    re.compile(p, re.IGNORECASE)
-    for p in (
-        r"\bJSON\s*Schema\b",
-        r'"\$schema"',
-        r'"type"\s*:\s*"(object|array|string|number|boolean)"',
-        r"<\?xml\b",
-        r"</[A-Za-z][\w:-]*>",  # closing XML/HTML tag
-        r"\bvalid\s+XML\b",
-        r"```(json|xml|python|sql|yaml|toml|[a-z+]{2,})\b",  # fenced code w/ a language
-        r"\bmust\s+(compile|be valid)\b",
-        r"\bexecutable\b.*\b(syntax|code)\b",
-    )
-)
+# Module-level cache: call_id → embedding vector.  Shared by all embedding-based
+# detectors so each text is embedded at most once per session lifetime.
+# Growth is bounded by session window size (maxlen on the deque) × sessions alive.
+_EMBEDDING_CACHE: dict[str, Any] = {}
 
 
-def detect_structural(input_text: str) -> ScoringResult:
-    """Flag strict-format demands in the input prompt. No LM, no embeddings (SCORE-04)."""
-    for pat in _STRUCTURAL_PATTERNS:
-        if pat.search(input_text):
-            return ScoringResult(
-                anomaly=True,
-                kind="structural_constraint",
-                score=1.0,
-                detector="StructuralConstraintScanner",
-            )
-    return ScoringResult(anomaly=False)
-
-
-# --- Tool-Call Flapping Monitor (SCORE-03) ------------------------------------------
-
-
-def detect_flapping(session: SessionState, config: RouterConfig) -> ScoringResult:
-    """Flag the same tool called >= flapping_min_repeats with unchanged observation."""
-    events = [e for e in session.tool_events if e.tool_name != "finish"]
-    if len(events) < config.flapping_min_repeats:
-        return ScoringResult(anomaly=False)
-
-    # Group consecutive same-tool calls and check observation stagnation.
-    counts: dict[str, int] = {}
-    obs_by_tool: dict[str, set[str]] = {}
-    for e in events:
-        counts[e.tool_name] = counts.get(e.tool_name, 0) + 1
-        obs_by_tool.setdefault(e.tool_name, set()).add(e.observation or "")
-
-    for tool_name, n in counts.items():
-        # >= min_repeats calls AND observations never changed (all identical).
-        if n >= config.flapping_min_repeats and len(obs_by_tool[tool_name]) <= 1:
-            return ScoringResult(
-                anomaly=True,
-                kind="tool_flapping",
-                score=float(n) / max(len(events), 1),
-                detector="ToolCallFlappingMonitor",
-            )
-    return ScoringResult(anomaly=False)
-
-
-# --- Loop Velocity Profiler (SCORE-02, P8/P9/P10) -----------------------------------
+def _get_embedding(call_id: str, text: str) -> Any:
+    if call_id not in _EMBEDDING_CACHE:
+        _EMBEDDING_CACHE[call_id] = _Embedder.encode(text)
+    return _EMBEDDING_CACHE[call_id]
 
 
 def _cosine(a: Any, b: Any) -> float:
@@ -102,7 +75,7 @@ def _cosine(a: Any, b: Any) -> float:
 
 
 class _Embedder:
-    """Lazy fastembed singleton (warmed once). Loaded only when the loop profiler runs."""
+    """Lazy fastembed singleton (warmed once). Loaded only when an embedding detector runs."""
 
     _model: Any = None
 
@@ -111,56 +84,308 @@ class _Embedder:
         if cls._model is None:
             try:
                 from fastembed import TextEmbedding
-            except ImportError as exc:  # pragma: no cover - exercised in minimal envs
+            except ImportError as exc:  # pragma: no cover
                 raise ImportError(
-                    "LoopVelocityProfiler needs the embedder. "
+                    "Embedding-based detectors need fastembed. "
                     "Install it with: pip install agent-router[embed]"
                 ) from exc
             cls._model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
         return next(iter(cls._model.embed([text])))
 
 
+def _observation_changed(session: SessionState, n_steps: int) -> bool:
+    """True if the last two available tool observations differ (agent made progress)."""
+    events = session.tool_events
+    if len(events) < 2:
+        return False
+    return (events[-1].observation or "") != (events[-2].observation or "")
+
+
+# ---------------------------------------------------------------------------
+# 1. Structural Constraint Scanner (SCORE-04) — regex, runs first
+# ---------------------------------------------------------------------------
+
+_STRUCTURAL_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"\bJSON\s*Schema\b",
+        r'"\$schema"',
+        r'"type"\s*:\s*"(object|array|string|number|boolean)"',
+        r"<\?xml\b",
+        r"</[A-Za-z][\w:-]*>",
+        r"\bvalid\s+XML\b",
+        r"```(json|xml|python|sql|yaml|toml|[a-z+]{2,})\b",
+        r"\bmust\s+(compile|be valid)\b",
+        r"\bexecutable\b.*\b(syntax|code)\b",
+    )
+)
+
+
+def detect_structural(input_text: str) -> ScoringResult:
+    """Flag strict-format demands in the input prompt (no LM, no embeddings)."""
+    for pat in _STRUCTURAL_PATTERNS:
+        if pat.search(input_text):
+            return ScoringResult(
+                anomaly=True,
+                kind="structural_constraint",
+                score=1.0,
+                detector="StructuralConstraintScanner",
+            )
+    return ScoringResult(anomaly=False)
+
+
+# ---------------------------------------------------------------------------
+# 2. Exception Rate Detector — fraction of recent steps that raised
+# ---------------------------------------------------------------------------
+
+
+def detect_exception_rate(session: SessionState, config: RouterConfig) -> ScoringResult:
+    """Flag sessions where too many recent LM calls are failing."""
+    window = list(session.window)
+    if len(window) < 2:
+        return ScoringResult(anomaly=False)
+    recent = window[-config.exception_rate_window :]
+    failed = sum(1 for r in recent if r.exception is not None)
+    rate = failed / len(recent)
+    if rate >= config.exception_rate_threshold:
+        return ScoringResult(
+            anomaly=True,
+            kind="exception_rate",
+            score=rate,
+            detector="ExceptionRateDetector",
+        )
+    return ScoringResult(anomaly=False, score=rate)
+
+
+# ---------------------------------------------------------------------------
+# 3. Hedging Density Detector — uncertainty markers in the latest output
+# ---------------------------------------------------------------------------
+
+_HEDGING_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"\bI(?:'m| am) not sure\b",
+        r"\bI think\b",
+        r"\bit seems\b",
+        r"\bI cannot determine\b",
+        r"\bI don'?t know\b",
+        r"\bI(?:'m| am) unable\b",
+        r"\bunable to\b",
+        r"\bI cannot\b",
+        r"\bI(?:'m| am) not able\b",
+        r"\bI(?:'m| am) unsure\b",
+        r"\bI(?:'m| am) having trouble\b",
+        r"\bpossibly\b",
+        r"\bI(?:'m| am) confused\b",
+    )
+)
+
+
+def detect_hedging(session: SessionState, config: RouterConfig) -> ScoringResult:
+    """Flag outputs where the model is expressing significant uncertainty."""
+    window = list(session.window)
+    if not window:
+        return ScoringResult(anomaly=False)
+    latest = window[-1]
+    if not latest.output_text:
+        return ScoringResult(anomaly=False)
+    matches = sum(1 for p in _HEDGING_PATTERNS if p.search(latest.output_text))
+    if matches >= config.hedging_min_matches:
+        return ScoringResult(
+            anomaly=True,
+            kind="hedging_density",
+            score=float(matches),
+            detector="HedgingDensityDetector",
+        )
+    return ScoringResult(anomaly=False, score=float(matches))
+
+
+# ---------------------------------------------------------------------------
+# 4. Step Overrun Detector — actual steps >> expected from input complexity
+# ---------------------------------------------------------------------------
+
+
+def _estimate_complexity(input_text: str) -> int:
+    """Rough upper-bound on expected steps from surface features of the input.
+
+    Counts sentences, bullet points, and question marks as proxies for
+    sub-tasks.  Clamped to [1, 15] so edge cases don't produce absurd numbers.
+    """
+    if not input_text.strip():
+        return 1
+    sentences = len(re.findall(r"[.!?]+", input_text))
+    bullets = len(re.findall(r"(?m)^[\s]*[-*•]\s", input_text))
+    questions = input_text.count("?")
+    raw = max(1, sentences + bullets + questions)
+    return min(raw, 15)
+
+
+def detect_step_overrun(
+    session: SessionState, config: RouterConfig, input_text: str
+) -> ScoringResult:
+    """Flag when the agent is taking far more steps than the task suggests it needs."""
+    window = list(session.window)
+    if not window or not input_text.strip():
+        return ScoringResult(anomaly=False)
+    actual = len(window)
+    expected = _estimate_complexity(input_text)
+    ratio = actual / expected
+    if ratio >= config.step_overrun_factor:
+        return ScoringResult(
+            anomaly=True,
+            kind="step_overrun",
+            score=ratio,
+            detector="StepOverrunDetector",
+            escalate_session=True,
+        )
+    return ScoringResult(anomaly=False, score=ratio)
+
+
+# ---------------------------------------------------------------------------
+# 5. Token Burn Acceleration Detector — per-step token spend is rising
+# ---------------------------------------------------------------------------
+
+
+def detect_burn_acceleration(session: SessionState, config: RouterConfig) -> ScoringResult:
+    """Flag when tokens-per-step in the second half of the window is accelerating
+    relative to the first half — a sign the agent is generating more text per step
+    without making progress (elaboration / confusion spiral).
+    """
+    window = list(session.window)
+    if len(window) < config.burn_window_min_steps:
+        return ScoringResult(anomaly=False)
+    tokens = [r.input_token_count + r.output_token_count for r in window]
+    mid = len(tokens) // 2
+    first_avg = sum(tokens[:mid]) / mid if mid > 0 else 0.0
+    second_avg = sum(tokens[mid:]) / (len(tokens) - mid)
+    if first_avg == 0.0:
+        return ScoringResult(anomaly=False)
+    ratio = second_avg / first_avg
+    if ratio >= config.burn_acceleration_factor:
+        return ScoringResult(
+            anomaly=True,
+            kind="token_burn_acceleration",
+            score=ratio,
+            detector="TokenBurnAccelerationDetector",
+            escalate_session=True,
+        )
+    return ScoringResult(anomaly=False, score=ratio)
+
+
+# ---------------------------------------------------------------------------
+# 6. Tool-Call Flapping Monitor (SCORE-03)
+# ---------------------------------------------------------------------------
+
+
+def detect_flapping(session: SessionState, config: RouterConfig) -> ScoringResult:
+    """Flag the same tool called >= flapping_min_repeats with unchanged observation."""
+    events = [e for e in session.tool_events if e.tool_name != "finish"]
+    if len(events) < config.flapping_min_repeats:
+        return ScoringResult(anomaly=False)
+    counts: dict[str, int] = {}
+    obs_by_tool: dict[str, set[str]] = {}
+    for e in events:
+        counts[e.tool_name] = counts.get(e.tool_name, 0) + 1
+        obs_by_tool.setdefault(e.tool_name, set()).add(e.observation or "")
+    for tool_name, n in counts.items():
+        if n >= config.flapping_min_repeats and len(obs_by_tool[tool_name]) <= 1:
+            return ScoringResult(
+                anomaly=True,
+                kind="tool_flapping",
+                score=float(n) / max(len(events), 1),
+                detector="ToolCallFlappingMonitor",
+            )
+    return ScoringResult(anomaly=False)
+
+
+# ---------------------------------------------------------------------------
+# 7. Semantic Velocity Detector — window-wide rate of output change
+# ---------------------------------------------------------------------------
+
+
+class SemanticVelocityDetector:
+    """Measures the average cosine distance between consecutive step outputs
+    across the entire window (not just the last two steps).
+
+    Low average distance = the agent is producing nearly-identical reasoning
+    on each step without progressing.  Also emits a de-escalation signal when
+    velocity recovers strongly after a previous escalation.
+    """
+
+    def detect(self, session: SessionState, config: RouterConfig) -> ScoringResult:
+        window = [r for r in session.window if r.output_text]
+        if len(window) < config.velocity_min_window:
+            return ScoringResult(anomaly=False)
+
+        distances: list[float] = []
+        for i in range(1, len(window)):
+            prev = window[i - 1]
+            curr = window[i]
+            assert prev.output_text is not None  # guarded by list comprehension above
+            assert curr.output_text is not None
+            sim = _cosine(
+                _get_embedding(prev.call_id, prev.output_text),
+                _get_embedding(curr.call_id, curr.output_text),
+            )
+            distances.append(1.0 - sim)
+
+        if not distances:
+            return ScoringResult(anomaly=False)
+
+        avg_velocity = sum(distances) / len(distances)
+
+        # De-escalation: trajectory recovered visibly after a strong-model call.
+        if (
+            config.de_escalation_enabled
+            and session.escalation_count > 0
+            and avg_velocity
+            >= config.semantic_velocity_threshold * config.de_escalation_velocity_multiplier
+        ):
+            return ScoringResult(anomaly=False, score=avg_velocity, de_escalate=True)
+
+        # Low velocity AND no observation change → agent is stuck across the whole window.
+        if avg_velocity < config.semantic_velocity_threshold:
+            if not _observation_changed(session, len(window)):
+                return ScoringResult(
+                    anomaly=True,
+                    kind="low_semantic_velocity",
+                    score=avg_velocity,
+                    detector="SemanticVelocityDetector",
+                    escalate_session=True,
+                )
+
+        return ScoringResult(anomaly=False, score=avg_velocity)
+
+
+# ---------------------------------------------------------------------------
+# 8. Loop Velocity Profiler (SCORE-02) — kept for backward compatibility
+# ---------------------------------------------------------------------------
+
+
 class LoopVelocityProfiler:
     """Detects repeating outputs across consecutive turns with no observation change.
 
-    Embeddings are cached by call_id to avoid recomputing. P10 false-positive gate:
-    a changed observation means the agent is making progress -> no flag.
+    Kept as the final embedding-based check so that existing unit tests (which
+    exercise it directly and check for 'detector=LoopVelocityProfiler' in logs)
+    continue to pass.  For new signal work, prefer SemanticVelocityDetector which
+    evaluates the whole window rather than just the last two steps.
     """
 
-    def __init__(self) -> None:
-        self._cache: dict[str, Any] = {}
-
-    def _emb(self, call_id: str, text: str) -> Any:
-        if call_id not in self._cache:
-            self._cache[call_id] = _Embedder.encode(text)
-        return self._cache[call_id]
-
     def detect(self, session: SessionState, config: RouterConfig) -> ScoringResult:
-        # Alignment caveat (live path): a step's TurnRecord is appended in on_lm_end,
-        # but its tool observation arrives slightly later (on_tool_end), so when scoring
-        # runs the newest observation can lag the newest output by one step. The
-        # observation-change gate therefore compares the two most-recent AVAILABLE
-        # observations as a proxy. On aligned fixtures (the unit contract) this is exact;
-        # the live one-step skew is a Phase-5 calibration item, not a correctness bug.
         window = list(session.window)
         if len(window) < 2:
             return ScoringResult(anomaly=False)
-
         prev, curr = window[-2], window[-1]
         if not prev.output_text or not curr.output_text:
             return ScoringResult(anomaly=False)
-
         sim = _cosine(
-            self._emb(prev.call_id, prev.output_text),
-            self._emb(curr.call_id, curr.output_text),
+            _get_embedding(prev.call_id, prev.output_text),
+            _get_embedding(curr.call_id, curr.output_text),
         )
         if sim < config.loop_similarity_threshold:
             return ScoringResult(anomaly=False, score=sim)
-
-        # Output is highly similar — only a loop if the observation did NOT change (P10).
         if _observation_changed(session, len(window)):
             return ScoringResult(anomaly=False, score=sim)
-
         return ScoringResult(
             anomaly=True,
             kind="loop_velocity",
@@ -169,61 +394,142 @@ class LoopVelocityProfiler:
         )
 
 
-def _observation_changed(session: SessionState, n_steps: int) -> bool:
-    """True if the last two steps' observations differ (agent made progress)."""
-    events = session.tool_events
-    if len(events) < 2:
-        return False  # no observation evidence -> treat as unchanged (conservative)
-    return (events[-1].observation or "") != (events[-2].observation or "")
+# ---------------------------------------------------------------------------
+# Context Window Pressure Detector
+# ---------------------------------------------------------------------------
 
 
-# --- Engine -------------------------------------------------------------------------
+def detect_context_pressure(session: SessionState, config: RouterConfig) -> ScoringResult:
+    """Flag when the latest step's input token count approaches the context window limit.
+
+    In DSPy agents each LM call re-sends the full conversation history, so
+    input_token_count at step N is a reliable proxy for how full the context
+    window is.  A model approaching its context limit degrades rapidly — better
+    to escalate to a model with a larger effective window before that happens.
+    """
+    window = list(session.window)
+    if not window:
+        return ScoringResult(anomaly=False)
+    latest_input = window[-1].input_token_count
+    pressure = latest_input / config.context_window_limit
+    if pressure >= config.context_pressure_threshold:
+        return ScoringResult(
+            anomaly=True,
+            kind="context_pressure",
+            score=pressure,
+            detector="ContextWindowPressureDetector",
+            escalate_session=True,
+        )
+    return ScoringResult(anomaly=False, score=pressure)
+
+
+# ---------------------------------------------------------------------------
+# Scoring Engine
+# ---------------------------------------------------------------------------
 
 
 class ScoringEngine:
-    """Runs detectors in priority order and applies the escalation cap.
+    """Runs all detectors in priority order and applies the routing decision.
 
-    Order (SCORE-04): structural override (regex) -> flapping (counters) ->
-    loop velocity (embeddings, most expensive).
+    Detector order (cheap → expensive, session-wide anomalies before per-step):
+      structural → exception_rate → hedging → step_overrun → burn_acceleration
+      → context_pressure → flapping → semantic_velocity → loop_velocity
+
+    Routing decisions applied by score_and_apply():
+      • anomaly + escalate_session  → set session.escalate_session = True (all future calls)
+      • anomaly only                → set session.current_threshold = 0.0 (next call only)
+      • de_escalate                 → reset threshold + escalate_session flag
     """
 
     def __init__(self, config: RouterConfig) -> None:
         self.config = config
+        self._semantic_velocity = SemanticVelocityDetector()
         self._loop = LoopVelocityProfiler()
 
     def score(self, session: SessionState, input_text: str = "") -> ScoringResult:
-        structural = detect_structural(input_text)
-        if structural.anomaly:
-            return structural
-        flapping = detect_flapping(session, self.config)
-        if flapping.anomaly:
-            return flapping
+        # 1. Structural (regex on input prompt)
+        r = detect_structural(input_text)
+        if r.anomaly:
+            return r
+
+        # 2. Exception rate (cheap counter)
+        r = detect_exception_rate(session, self.config)
+        if r.anomaly:
+            return r
+
+        # 3. Hedging density (regex on latest output)
+        r = detect_hedging(session, self.config)
+        if r.anomaly:
+            return r
+
+        # 4. Step overrun (arithmetic)
+        r = detect_step_overrun(session, self.config, input_text)
+        if r.anomaly:
+            return r
+
+        # 5. Token burn acceleration (arithmetic)
+        r = detect_burn_acceleration(session, self.config)
+        if r.anomaly:
+            return r
+
+        # 6. Context window pressure (arithmetic)
+        r = detect_context_pressure(session, self.config)
+        if r.anomaly:
+            return r
+
+        # 7. Tool-call flapping (counter)
+        r = detect_flapping(session, self.config)
+        if r.anomaly:
+            return r
+
+        # 8. Semantic velocity (embeddings, window-wide) — may also emit de_escalate
+        r = self._semantic_velocity.detect(session, self.config)
+        if r.anomaly or r.de_escalate:
+            return r
+
+        # 9. Loop velocity (embeddings, consecutive pair) — backward-compat fallback
         return self._loop.detect(session, self.config)
 
     def score_and_apply(self, session: SessionState, input_text: str = "") -> ScoringResult:
-        """Score, then apply the escalation decision + cap under the session lock (SCORE-05)."""
+        """Score, then apply the routing decision under the session lock."""
         result = self.score(session, input_text)
-        if not result.anomaly:
-            return result
+
         with session._lock:
-            if session.escalation_count < self.config.max_escalations_per_session:
-                session.current_threshold = 0.0
-                session.escalation_count += 1
+            if result.de_escalate and session.escalation_count > 0:
+                session.current_threshold = self.config.default_threshold
+                session.escalate_session = False
                 logger.info(
-                    "escalation session=%s detector=%s kind=%s score=%.4f count=%d",
+                    "de_escalation session=%s detector=%s score=%.4f "
+                    "threshold_reset=%.5f",
                     session.session_id,
                     result.detector,
-                    result.kind,
                     result.score,
-                    session.escalation_count,
+                    self.config.default_threshold,
                 )
-            else:
-                logger.warning(
-                    "escalation_cap_reached session=%s detector=%s kind=%s score=%.4f "
-                    "(not forcing threshold=0.0)",
-                    session.session_id,
-                    result.detector,
-                    result.kind,
-                    result.score,
-                )
+            elif result.anomaly:
+                if session.escalation_count < self.config.max_escalations_per_session:
+                    session.current_threshold = 0.0
+                    if result.escalate_session:
+                        session.escalate_session = True
+                    session.escalation_count += 1
+                    logger.info(
+                        "escalation session=%s detector=%s kind=%s score=%.4f "
+                        "count=%d escalate_session=%s",
+                        session.session_id,
+                        result.detector,
+                        result.kind,
+                        result.score,
+                        session.escalation_count,
+                        result.escalate_session,
+                    )
+                else:
+                    logger.warning(
+                        "escalation_cap_reached session=%s detector=%s kind=%s score=%.4f "
+                        "(not forcing threshold=0.0)",
+                        session.session_id,
+                        result.detector,
+                        result.kind,
+                        result.score,
+                    )
+
         return result
